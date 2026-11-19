@@ -69,6 +69,9 @@ button.sel { outline: 3px solid var(--gold); outline-offset: 1px; }
 .box h2, .box h3 { margin-top: 0; color: var(--gold); }
 .form-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .form-row:last-child { border-bottom: 0; }
+.wired-note { font-size: 14px; color: var(--ink2); margin: 6px 0; }
+.wired-note code { color: var(--ink); }
+.wired-warn { font-size: 14px; color: var(--gold); margin: 6px 0; }
 .form-row label { flex: 1; }
 .form-row small { display: block; color: var(--ink2); }
 .form-row select { min-height: 44px; background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; min-width: 110px; }
@@ -239,13 +242,14 @@ button.sel { outline: 3px solid var(--gold); outline-offset: 1px; }
 .block { fill: var(--building); stroke: var(--building-edge); stroke-width: 2; }
 .filler { stroke: var(--building); stroke-width: 54; stroke-linecap: butt; }
 .street { stroke: var(--street); stroke-width: 24; stroke-linecap: round; }
+.street-long { stroke: #e8d6a8; stroke-width: 4; stroke-dasharray: 10 9; opacity: .85; }
 .bridge { stroke: #8a6f4c; stroke-width: 30; stroke-linecap: butt; }
 .bridge-rail { stroke: #c9b08a; stroke-width: 34; stroke-linecap: butt; stroke-dasharray: 3 9; opacity: .5; }
 .divider { fill: none; stroke: #e0353d; stroke-width: 6; stroke-dasharray: 22 14; stroke-linecap: round; stroke-linejoin: round; opacity: .9; pointer-events: none; }
 .quad-label { fill: #ff6b70; font: bold 26px Georgia, serif; letter-spacing: 3px; text-anchor: middle; dominant-baseline: central; opacity: .75; pointer-events: none; paint-order: stroke; stroke: #000; stroke-width: 4px; }
 .junc { fill: var(--junc); stroke: #2a231b; stroke-width: 2; }
 .loc circle { fill: var(--loc); stroke: #1d1712; stroke-width: 2.5; }
-.loc.bank circle { fill: #cfe0ea; }
+.loc.bank circle { fill: #7fb0d8; stroke: #1f4f7a; }
 .loc text { font: bold 15px Georgia, serif; fill: var(--loc-ink); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 .lantern-ic { fill: var(--gold); font-size: 22px; text-anchor: middle; dominant-baseline: central; }
 .map-label { fill: rgba(236,223,196,.25); font: italic bold 30px Georgia, serif; text-anchor: middle; letter-spacing: 4px; pointer-events: none; }

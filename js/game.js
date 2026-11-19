@@ -4,7 +4,7 @@
   let M = MapGen.build();
   const SAVE_KEY = 'ombre-tamigi-save-v1';
   const SET_KEY = 'ombre-tamigi-settings-v2';
-  const DEFAULTS = { nights: 4, limit: 15, reveal: 5, revealLag: 3, specials: 2, cards: true, detectives: 3, mapMode: 'random' };
+  const DEFAULTS = { nights: 4, limit: 15, reveal: 5, revealLag: 3, specials: 2, cards: true, detectives: 3, mapMode: 'random', riverMode: 'random' };
   const CERTIFIED = typeof CERTIFIED_MAPS !== 'undefined' ? CERTIFIED_MAPS : [];
 
   // Cambia la mappa in uso (ricostruisce il disegno statico se il gioco e' gia' a schermo)
@@ -30,7 +30,7 @@
   const SPECIAL = {
     coach: { name: 'Carrozza', icon: '🐎', desc: 'Due movimenti normali nello stesso turno (contano 2 mosse).' },
     alley: { name: 'Vicolo', icon: '🚪', desc: "Attraversa un isolato: raggiungi un luogo che si affaccia sullo stesso isolato, ignorando i detective." },
-    boat: { name: 'Barca', icon: '⛵', desc: 'Da un luogo sul fiume (cerchio azzurro) raggiungi un altro luogo sul fiume entro 3 isolati, ignorando i detective.' },
+    boat: { name: 'Barca', icon: '⛵', desc: "Da un luogo blu sul fiume raggiungi un altro luogo blu vicino (al massimo 2 isolati più in là), nello stesso tratto di fiume tra due ponti, sulla stessa sponda o su quella opposta, ignorando i detective." },
   };
   const JACK_CARDS = {
     nebbia: { name: 'Nebbia fitta', icon: '🌫️', text: 'La prossima rivelazione periodica viene annullata.', secret: true },
@@ -42,7 +42,7 @@
   };
   const POLICE_CARDS = {
     fischietto: { name: 'Fischietto', icon: '📯', text: 'Il detective selezionato (non ancora mosso) può muovere fino a 4 incroci.' },
-    testimone: { name: 'Testimone', icon: '👁️', text: 'Scopri se Jack ora si trova a Nord o a Sud del fiume.' },
+    testimone: { name: 'Testimone', icon: '👁️', text: 'Scopri se Jack ora si trova a Nord o a Sud.' },
     informatore: { name: 'Informatore', icon: '🕯️', text: 'Scopri in quale distretto si trova Jack ora.' },
     segugio: { name: 'Cane da fiuto', icon: '🐕', text: 'La prossima ricerca del detective selezionato controlla tutti i luoghi adiacenti.' },
     retata: { name: 'Retata', icon: '⛓️', text: 'Il detective selezionato può sia cercare indizi sia tentare un arresto.' },
@@ -68,6 +68,70 @@
   }
   function saveSettings(s) { try { localStorage.setItem(SET_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
 
+  // ---------------- Mappe cablate ----------------
+  // Disegnate a mano (formato: vedi buildWired in map.js): quelle di maps/cablate.json, lette all'avvio,
+  // piu' quelle dei file JSON caricati dal giocatore, che restano su questo dispositivo.
+  const WIRED_KEY = 'ombre-tamigi-wired-v1';
+  const wired = { file: [], fileError: null };
+  const wiredMaps = d => (Array.isArray(d) ? d : d && Array.isArray(d.maps) ? d.maps : d && (d.junctions || d.params) ? [d] : []);
+  const wiredLocal = () => { try { return wiredMaps(JSON.parse(localStorage.getItem(WIRED_KEY) || '[]')); } catch (e) { return []; } };
+  const wiredKey = m => String(m.id || m.name || '');
+  const wiredLabel = m => m.name || wiredKey(m) || 'mappa senza nome';
+  // una mappa caricata a mano sostituisce quella del file con lo stesso id
+  const wiredAll = () => { const local = wiredLocal(), keys = local.map(wiredKey); return wired.file.filter(m => !keys.includes(wiredKey(m))).concat(local); };
+  const wiredParams = m => m.params || { wired: m };
+  function wiredCheck(m) {
+    try { const B = MapGen.build(wiredParams(m)); return { ok: true, locations: B.C.length, warnings: B.warnings || [] }; } catch (e) { return { ok: false, error: e.message }; }
+  }
+  const wiredMsg = html => showModal(`<h2>🧷 Mappe cablate</h2><p>${html}</p><div class="btn-row"><button data-act="close-modal" class="primary">OK</button></div>`);
+
+  function wiredBox(sel) {
+    const list = wiredAll().map(m => ({ m, key: wiredKey(m), chk: wiredCheck(m) }));
+    const good = list.filter(x => x.chk.ok);
+    const cur = good.find(x => x.key === sel) || good[0];
+    const nLocal = wiredLocal().length;
+    let h = `<div class="box" id="wiredbox"><h3>🧷 Mappe cablate</h3>
+      <p class="wired-note">Mappe disegnate a mano, lette dal file <code>maps/cablate.json</code>${nLocal ? ` (più ${nLocal} caricat${nLocal === 1 ? 'a' : 'e'} su questo dispositivo)` : ''}. Per giocarle scegli «Cablata» alla voce Mappa.</p>`;
+    if (good.length) {
+      h += `<div class="form-row"><label>Mappa cablata<small>Fiume e bilanciamento sono quelli disegnati nel file</small></label><select name="wiredId">${good.map(x => `<option value="${esc(x.key)}" ${x === cur ? 'selected' : ''}>${esc(wiredLabel(x.m))} · ${x.chk.locations} luoghi</option>`).join('')}</select></div>`;
+      cur.chk.warnings.forEach(w => { h += `<p class="wired-warn">⚠ ${esc(w)}</p>`; });
+    } else h += '<p class="wired-note">Nessuna mappa cablata disponibile.</p>';
+    list.filter(x => !x.chk.ok).forEach(x => { h += `<p class="wired-warn">✗ ${esc(wiredLabel(x.m))}: ${esc(x.chk.error)}</p>`; });
+    if (wired.fileError && !wired.file.length) h += '<p class="wired-note">Non riesco a leggere maps/cablate.json (succede se il gioco è aperto come file locale, senza server): usa «Carica file JSON».</p>';
+    return h + `<div class="btn-row"><button data-act="wired-load">📂 Carica file JSON…</button>${nLocal ? '<button data-act="wired-clear">Rimuovi le mappe caricate</button>' : ''}</div>
+      <input type="file" id="wiredfile" accept=".json,application/json" hidden></div>`;
+  }
+  // Ridisegna solo la sezione, senza toccare le altre scelte del modulo
+  function refreshWired(sel, choose) {
+    const box = document.getElementById('wiredbox'), f = document.getElementById('setform');
+    if (!box) return;
+    if (sel === undefined) sel = (box.querySelector('[name=wiredId]') || {}).value;
+    box.outerHTML = wiredBox(sel);
+    if (choose && f) f.mapMode.value = 'wired';
+  }
+  async function wiredImport(file) {
+    if (!file) return;
+    let maps;
+    try { maps = wiredMaps(JSON.parse(await file.text())); } catch (e) { return wiredMsg(`Il file non è un JSON valido: ${esc(e.message)}`); }
+    if (!maps.length) return wiredMsg('Il file non contiene mappe: serve un elenco «maps» come in maps/cablate.json.');
+    const base = file.name.replace(/\.json$/i, '');
+    maps.forEach((m, i) => { if (!wiredKey(m)) m.name = base + (maps.length > 1 ? ' ' + (i + 1) : ''); });
+    const good = maps.filter(m => wiredCheck(m).ok), bad = maps.filter(m => !wiredCheck(m).ok);
+    if (good.length) {
+      const keys = good.map(wiredKey);
+      try { localStorage.setItem(WIRED_KEY, JSON.stringify(wiredLocal().filter(m => !keys.includes(wiredKey(m))).concat(good))); }
+      catch (e) { return wiredMsg('Non c’è abbastanza spazio su questo dispositivo per salvare le mappe.'); }
+      refreshWired(keys[0], true);
+    }
+    if (bad.length) wiredMsg(bad.map(m => `✗ ${esc(wiredLabel(m))}: ${esc(wiredCheck(m).error)}`).join('<br>'));
+  }
+  if (typeof fetch === 'function') {
+    fetch('maps/cablate.json', { cache: 'no-cache' })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+      .then(d => { wired.file = wiredMaps(d); }, e => { wired.fileError = e.message || String(e); })
+      .then(() => refreshWired());
+  }
+
   function shuffle(a) {
     for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; }
     return a;
@@ -82,21 +146,23 @@
 
   function addLog(txt, cls) { S.log.push({ n: S.night + 1, t: S.turn, txt, cls: cls || '' }); }
 
-  function normalMoves(from) { return uniq(M.adj[from].filter(e => !blocked(e.via)).map(e => e.to)); }
+  function normalMoves(from) { return uniq(M.adj[from].filter(e => !e.via.some(blocked)).map(e => e.to)); }
 
   function jackOptions(mode, steps) {
     const J = S.jack;
     const from = steps.length ? steps[steps.length - 1] : J.pos;
     const left = limit() - S.moves;
     if (mode === 'normal') return !steps.length && left >= 1 ? normalMoves(from) : [];
+    // Come nell'originale: con una mossa speciale Jack non puo' entrare nel luogo della meta
+    const tgt = currentTarget();
     if (mode === 'coach') {
       if (J.tokens.coach < 1 || left < 2) return [];
-      if (steps.length === 0) return normalMoves(from).filter(x => normalMoves(x).some(y => y !== J.pos));
-      if (steps.length === 1) return normalMoves(from).filter(y => y !== J.pos);
+      if (steps.length === 0) return normalMoves(from).filter(x => x !== tgt && normalMoves(x).some(y => y !== J.pos && y !== tgt));
+      if (steps.length === 1) return normalMoves(from).filter(y => y !== J.pos && y !== tgt);
       return [];
     }
-    if (mode === 'alley') return !steps.length && J.tokens.alley > 0 && left >= 1 ? M.alley[from].slice() : [];
-    if (mode === 'boat') return !steps.length && J.tokens.boat > 0 && left >= 1 ? M.boat[from].slice() : [];
+    if (mode === 'alley') return !steps.length && J.tokens.alley > 0 && left >= 1 ? M.alley[from].filter(c => c !== tgt) : [];
+    if (mode === 'boat') return !steps.length && J.tokens.boat > 0 && left >= 1 ? M.boat[from].filter(c => c !== tgt) : [];
     return [];
   }
   function jackHasAnyMove() {
@@ -124,7 +190,7 @@
     const used = J.targets.map(t => M.C[t].district);
     const d = M.dist(prev);
     const maxD = S.settings.limit - 3;
-    return M.C.filter(c => c.district && !used.includes(c.district) && c.id !== J.start && !J.targets.includes(c.id) && d[c.id] >= 3 && d[c.id] <= maxD).map(c => c.id);
+    return M.C.filter(c => c.district && !c.bank && !used.includes(c.district) && c.id !== J.start && !J.targets.includes(c.id) && d[c.id] >= 3 && d[c.id] <= maxD).map(c => c.id);
   }
 
   // La Polizia si schiera solo sui posti di guardia, prima che Jack scelga la partenza
@@ -341,7 +407,7 @@
     if (key === 'fischietto') { if (d.moved) return toast('Seleziona un detective che non si è ancora mosso.'); d.steps = 4; }
     if (key === 'segugio') { if (d.acted || !d.moved) return toast('Seleziona un detective già mosso che non ha ancora agito.'); d.sniff = true; }
     if (key === 'retata') { if (d.acted) return toast('Seleziona un detective che non ha ancora agito.'); d.double = true; }
-    if (key === 'testimone') info = here.bridge ? 'Jack si trova su un ponte sul fiume.' : `Jack si trova a ${here.north ? 'NORD' : 'SUD'} del fiume.`;
+    if (key === 'testimone') info = here.bridge ? 'Jack si trova su un ponte sul fiume.' : `Jack si trova a ${here.north ? 'NORD' : 'SUD'}.`;
     if (key === 'informatore') info = here.bridge ? 'Jack si trova su un ponte sul fiume.' : `Jack si trova nel distretto ${DISTRICTS[here.district].toUpperCase()}.`;
     if (key === 'telegrafo') {
       const p = J.path;
@@ -518,12 +584,15 @@
 
   function buildStatic() {
     let h = `<rect x="-2000" y="-2000" width="${M.W + 4000}" height="${M.H + 4000}" fill="var(--ground)"/>`;
-    const rv = M.river.map(p => p.join(',')).join(' ');
-    h += `<polyline class="river-edge" points="${rv}"/><polyline class="river" points="${rv}"/>`;
-    [-30, 0, 30].forEach(off => { h += `<polyline class="river-wave" points="${M.river.map(p => p[0] + ',' + (p[1] + off)).join(' ')}"/>`; });
+    // Tratti d'acqua (fiume intero, corto, lago o spezzato; nessuno nelle mappe senza fiume)
+    M.waters.forEach(w => {
+      const rv = w.map(p => p.join(',')).join(' ');
+      h += `<polyline class="river-edge" points="${rv}"/><polyline class="river" points="${rv}"/>`;
+      [-30, 0, 30].forEach(off => { h += `<polyline class="river-wave" points="${w.map(p => p[0] + ',' + (p[1] + off)).join(' ')}"/>`; });
+    });
     M.cells.forEach(cell => {
       const pts = cell.corners.map(id => M.J[id]);
-      const cx = pts.reduce((s, p) => s + p.x, 0) / 4, cy = pts.reduce((s, p) => s + p.y, 0) / 4;
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length, cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
       const poly = pts.map(p => {
         const dx = cx - p.x, dy = cy - p.y, L = Math.hypot(dx, dy) || 1, k = 24 / L;
         return (p.x + dx * k).toFixed(1) + ',' + (p.y + dy * k).toFixed(1);
@@ -535,19 +604,26 @@
       const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy), k = 26 / L;
       h += `<line class="filler" x1="${A.x + dx * k}" y1="${A.y + dy * k}" x2="${B.x - dx * k}" y2="${B.y - dy * k}"/>`;
     });
-    M.C.forEach(c => {
+    // Tutte le strade, comprese le strade lunghe senza luoghi
+    M.segs.forEach(c => {
       const A = M.J[c.a], B = M.J[c.b];
       if (c.bridge) h += `<line class="bridge-rail" x1="${A.x}" y1="${A.y + 20}" x2="${B.x}" y2="${B.y - 20}"/><line class="bridge" x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`;
       else h += `<line class="street" x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`;
+      // Strada senza luoghi: tratteggio al centro (solo incroci della Polizia; Jack la attraversa in un movimento)
+      if (c.noLoc) h += `<line class="street-long" x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`;
     });
-    // Confini dei 4 distretti: linee rosse tratteggiate (lungo il fiume e a zig-zag tra Ovest ed Est)
-    h += `<polyline class="divider" points="${M.river.map(p => p.join(',')).join(' ')}"/>`;
+    // Confini dei 4 distretti: linee rosse tratteggiate (Nord/Sud a meta' mappa e a zig-zag tra Ovest ed Est)
+    h += `<polyline class="divider" points="${M.nsLine.map(p => p.join(',')).join(' ')}"/>`;
     h += `<polyline class="divider" points="${M.divider.map(p => p.join(',')).join(' ')}"/>`;
     [['NORD-OVEST', 0.25, 38], ['NORD-EST', 0.75, 38], ['SUD-OVEST', 0.25, M.H - 26], ['SUD-EST', 0.75, M.H - 26]].forEach(([t, fx, y]) => {
       h += `<text class="quad-label" x="${M.W * fx}" y="${y}">${t}</text>`;
     });
-    const rmid = M.river[Math.floor(M.river.length / 2)];
-    h += `<text class="map-label" x="${M.W * 0.27}" y="${rmid[1] + 10}">~ TAMIGI ~</text>`;
+    // Nome del fiume sul tratto d'acqua piu' lungo (con un margine dai bordi)
+    const longest = M.waters.slice().sort((a, b) => (b[b.length - 1][0] - b[0][0]) - (a[a.length - 1][0] - a[0][0]))[0];
+    if (longest && longest[longest.length - 1][0] - longest[0][0] > 300) {
+      const x0 = Math.max(longest[0][0], 40), x1 = Math.min(longest[longest.length - 1][0], M.W - 40);
+      h += `<text class="map-label" x="${(x0 + x1) / 2}" y="${longest[Math.floor(longest.length / 2)][1] + 10}">~ TAMIGI ~</text>`;
+    }
     M.J.forEach(j => { h += `<rect class="junc" x="${j.x - 8}" y="${j.y - 8}" width="16" height="16" rx="2"/>`; });
     M.C.forEach(c => {
       h += `<g class="loc${c.bank ? ' bank' : ''}"><circle cx="${c.x}" cy="${c.y}" r="17"/><text x="${c.x}" y="${c.y}">${c.num}</text></g>`;
@@ -939,7 +1015,7 @@
           <button data-act="setup-undo" ${J.start === null ? 'disabled' : ''}>↶ Annulla</button>
           <button class="primary" data-act="setup-confirm" ${J.targets.length === need ? '' : 'disabled'}>Conferma piano</button>
         </div>
-        <p style="font-size:13px;color:var(--ink2)">Distretti: NO = Nord-Ovest, NE = Nord-Est, SO = Sud-Ovest, SE = Sud-Est. Il fiume divide Nord e Sud.</p>
+        <p style="font-size:13px;color:var(--ink2)">Distretti: NO = Nord-Ovest, NE = Nord-Est, SO = Sud-Ovest, SE = Sud-Est. La linea rossa orizzontale divide Nord e Sud (il fiume, se c'è, può essere intero, corto, un lago o mancare).</p>
         ${prefToggle('jackRotate', '🔄 Ruota la mappa a caso a ogni turno (chi guarda le dita non capisce dove tocchi)')}`];
     }
 
@@ -1088,13 +1164,15 @@
       <form class="box" id="setform" onsubmit="return false">
         <div class="form-row"><label>Notti (delitti)<small>Jack deve colpire in ogni notte</small></label>${sel('nights', [3, 4], s.nights)}</div>
         <div class="form-row"><label>Mosse per notte<small>Limite per raggiungere la meta</small></label>${sel('limit', [12, 13, 14, 15, 16, 17, 18, 20], s.limit)}</div>
-        <div class="form-row"><label>Mappa<small>Le casuali hanno ~189 luoghi e sono verificate con partite simulate</small></label>${sel('mapMode', ['random', 'certified', 'classic'], s.mapMode, v => ({ random: 'Casuale bilanciata (nuova)', certified: 'Casuale certificata (istantanea)', classic: 'Piccola (64 luoghi)' }[v]))}</div>
+        <div class="form-row"><label>Mappa<small>Le casuali hanno ~189 luoghi e sono verificate con partite simulate</small></label>${sel('mapMode', ['random', 'certified', 'classic', 'wired'], s.mapMode, v => ({ random: 'Casuale bilanciata (nuova)', certified: 'Casuale certificata (istantanea)', classic: 'Piccola (64 luoghi)', wired: 'Cablata (da file JSON)' }[v]))}</div>
+        <div class="form-row"><label>Fiume<small>Casuale: intero, corto, lago interno o spezzato, sempre sul confine Nord/Sud. Non vale per la mappa Piccola né per le cablate.</small></label>${sel('riverMode', ['random', 'none', 'full'], s.riverMode || 'random', v => ({ random: 'Casuale', none: 'Nessun fiume', full: 'Intero (da bordo a bordo)' }[v]))}</div>
         <div class="form-row"><label>Rivelazione ogni X turni<small>All'inizio del turno della Polizia un testimone rivela dove si trovava Jack</small></label>${sel('reveal', [0, 3, 4, 5, 6, 7], s.reveal, v => (v ? 'ogni ' + v : 'mai'))}</div>
         <div class="form-row"><label>Ritardo della rivelazione<small>Quanti turni prima risale l'avvistamento (3 = bilanciato)</small></label>${sel('revealLag', [0, 1, 2, 3, 4], s.revealLag, v => (v ? v + ' turni prima' : 'posizione attuale (difficile per Jack)'))}</div>
         <div class="form-row"><label>Gettoni speciali<small>Per tipo: Carrozza, Vicolo, Barca</small></label>${sel('specials', [1, 2, 3], s.specials)}</div>
         <div class="form-row"><label>Detective<small>Numero di pedine della Polizia</small></label>${sel('detectives', [2, 3, 4], s.detectives)}</div>
         <div class="form-row"><label>Carte evento (opzionali)<small>Ogni notte Jack e la Polizia pescano una carta</small></label><span class="switch"><input type="checkbox" name="cards" ${s.cards ? 'checked' : ''}><span></span></span></div>
       </form>
+      ${wiredBox(s.wiredId)}
       <div class="btn-row"><button data-act="to-menu">← Indietro</button><button class="primary" data-act="start-game">Inizia</button></div>
     </div>`;
   }
@@ -1113,7 +1191,8 @@
         <ul>
           <li><b>Cerchi numerati</b> = luoghi. Jack si muove solo sui luoghi.</li>
           <li><b>Quadrati</b> = incroci. I detective si muovono solo sugli incroci.</li>
-          <li>Il <b>fiume</b> divide la città in Nord e Sud; si attraversa solo sui ponti (o in barca). I cerchi azzurri sono luoghi sul fiume.</li>
+          <li>La <b>linea rossa orizzontale</b> divide la città in Nord e Sud. Il <b>fiume</b> può essere intero, corto, un lago interno, spezzato in due tratti, oppure mancare (impostazione «Fiume»): dove c'è acqua si attraversa solo sui ponti (o in barca). I <b>cerchi blu</b> sono luoghi sul fiume: i ponti dividono il fiume in specchi d'acqua, e la Barca si muove solo tra cerchi blu vicini dello stesso tratto (al massimo 2 isolati). I cerchi blu non possono essere luoghi del delitto.</li>
+          <li><b>Strade senza luoghi</b>: alcuni tratti dritti di 1–4 strade non hanno luoghi. La Polizia li percorre incrocio per incrocio; Jack li attraversa con un solo movimento, ma non può passare se un detective occupa uno qualsiasi degli incroci del tratto.</li>
           <li>La città ha 4 distretti: Nord-Ovest, Nord-Est, Sud-Ovest, Sud-Est.</li>
         </ul>
         <h3>Preparazione</h3>
@@ -1125,7 +1204,8 @@
           <li><b>${SPECIAL.coach.icon} Carrozza</b>: ${SPECIAL.coach.desc}</li>
           <li><b>${SPECIAL.alley.icon} Vicolo</b>: ${SPECIAL.alley.desc}</li>
           <li><b>${SPECIAL.boat.icon} Barca</b>: ${SPECIAL.boat.desc}</li>
-          <li>L'uso di una mossa speciale è annunciato alla Polizia (ma non la destinazione). Ogni gettone si usa una volta per partita.</li>
+          <li>L'uso di una mossa speciale è annunciato alla Polizia (ma non la destinazione). Ogni gettone si usa una volta per partita (di base 2 per tipo).</li>
+          <li><b>Nessuna mossa speciale può entrare nel luogo della meta</b>: il delitto si raggiunge solo con un movimento normale.</li>
           <li>Ogni movimento costa 1 mossa (Carrozza 2). Raggiunta la meta, il delitto viene rivelato e inizia la notte successiva da quel luogo.</li>
         </ul>
         <h3>Rivelazione periodica</h3>
@@ -1241,7 +1321,8 @@
     const loc = '<circle r="13" fill="#ecdfc4" stroke="#1d1712" stroke-width="2"/>';
     return `<ul class="legend">
       <li>${sw(loc + '<text y="1" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="bold" fill="#1d1712">12</text>')} Luogo (Jack si muove qui)</li>
-      <li>${sw('<circle r="13" fill="#cfe0ea" stroke="#1d1712" stroke-width="2"/>')} Luogo sul fiume (Barca)</li>
+      <li>${sw('<circle r="13" fill="#7fb0d8" stroke="#1f4f7a" stroke-width="2"/>')} Luogo blu sul fiume (Barca, mai meta)</li>
+      <li>${sw('<line x1="-14" y1="0" x2="14" y2="0" stroke="#5a4632" stroke-width="10"/><line x1="-14" y1="0" x2="14" y2="0" stroke="#e8d6a8" stroke-width="3" stroke-dasharray="6 5"/>')} Strada senza luoghi (Jack la attraversa in un movimento)</li>
       <li>${sw('<rect x="-8" y="-8" width="16" height="16" fill="#a68f6c"/>')} Incrocio (detective)</li>
       <li>${sw('<line x1="-20" y1="0" x2="20" y2="0" stroke="#e0353d" stroke-width="4" stroke-dasharray="8 5"/>')} Confine tra i 4 distretti</li>
       <li>${sw(loc + '<circle r="18" fill="none" stroke="#c0353b" stroke-width="4"/>')} Delitto / avvistamento (★ partenza, ✝n notte n)</li>
@@ -1256,8 +1337,16 @@
   // Sceglie/genera la mappa secondo le impostazioni e avvia la partita
   async function startWithMap(s) {
     if (s.mapMode === 'classic') return newGame(s, { params: null, name: 'Piccola (64 luoghi)', jackRate: null });
-    if (s.mapMode === 'certified' && CERTIFIED.length) {
-      const m = CERTIFIED[Math.floor(Math.random() * CERTIFIED.length)];
+    if (s.mapMode === 'wired') {
+      // la definizione completa finisce nel salvataggio: la partita resta giocabile anche se il file cambia
+      const m = wiredAll().find(x => wiredKey(x) === s.wiredId && wiredCheck(x).ok);
+      if (!m) return wiredMsg('Nessuna mappa cablata valida da giocare: controlla maps/cablate.json o carica un file JSON.');
+      return newGame(s, { params: wiredParams(m), name: wiredLabel(m), jackRate: null });
+    }
+    const riverMode = s.riverMode || 'random';
+    const certList = CERTIFIED.filter(m => (m.params.riverMode || 'full') === riverMode);
+    if (s.mapMode === 'certified' && certList.length) {
+      const m = certList[Math.floor(Math.random() * certList.length)];
       const std = Sim.DEFAULT_SETTINGS;
       const same = ['nights', 'limit', 'reveal', 'revealLag', 'specials', 'detectives'].every(k => s[k] === std[k]);
       return newGame(s, { params: m.params, name: `Certificata #${m.params.seed}`, jackRate: same ? m.jackRate : null, ci95: m.ci95, games: m.games });
@@ -1277,7 +1366,7 @@
     const bar = sc.querySelector('.bar'), info = sc.querySelector('.gen-info');
     const seed = (Math.random() * 4294967295) >>> 0;
     const res = await Sim.generateBalanced(MapGen, simSettings(s), {
-      seed, candidates: 12, games: 80, confirmGames: 240, tolerance: 0.06,
+      seed, candidates: 12, games: 80, confirmGames: 240, tolerance: 0.06, mapOpts: { riverMode },
       shouldStop: () => U.genCancel,
       onProgress: (f, p) => {
         bar.style.width = Math.round(f * 100) + '%';
@@ -1313,11 +1402,14 @@
         const s = {
           nights: +f.nights.value, limit: +f.limit.value, reveal: +f.reveal.value,
           specials: +f.specials.value, detectives: +f.detectives.value, cards: f.cards.checked,
-          revealLag: +f.revealLag.value, mapMode: f.mapMode.value,
+          revealLag: +f.revealLag.value, mapMode: f.mapMode.value, riverMode: f.riverMode.value,
+          wiredId: (document.querySelector('#wiredbox [name=wiredId]') || {}).value || null,
         };
         saveSettings(s);
         return startWithMap(s);
       }
+      case 'wired-load': { const inp = document.getElementById('wiredfile'); inp.value = ''; return inp.click(); }
+      case 'wired-clear': try { localStorage.removeItem(WIRED_KEY); } catch (e) { /* ignore */ } return refreshWired();
       case 'gen-cancel': U.genCancel = true; return;
       case 'handoff-ok': S.handoff = null; U.screenKey = null; return render();
       case 'night-ok':
@@ -1404,6 +1496,8 @@
   }
 
   document.addEventListener('change', e => {
+    if (e.target.name === 'wiredId') return refreshWired(e.target.value, true);
+    if (e.target.id === 'wiredfile') return wiredImport(e.target.files[0]);
     const inp = e.target.closest('[data-pref]');
     if (!inp || !S) return;
     prefs[inp.dataset.pref] = inp.checked;

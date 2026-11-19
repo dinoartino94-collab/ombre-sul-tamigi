@@ -47,22 +47,23 @@
 
   function normalMoves(M, from, det) {
     const out = [];
-    for (const e of M.adj[from]) if (!det.includes(e.via) && !out.includes(e.to)) out.push(e.to);
+    for (const e of M.adj[from]) if (!e.via.some(j => det.includes(j)) && !out.includes(e.to)) out.push(e.to);
     return out;
   }
 
   // Tutte le mosse legali: {type, visits:[...], end, cost}
-  function legalMoves(M, J, det, left) {
+  // target: le mosse speciali non possono entrare nel luogo della meta (come nell'originale)
+  function legalMoves(M, J, det, left, target) {
     const res = [];
     if (left >= 1) {
       normalMoves(M, J.pos, det).forEach(c => res.push({ type: 'normal', visits: [c], end: c, cost: 1 }));
-      if (J.tokens.alley > 0) M.alley[J.pos].forEach(c => res.push({ type: 'alley', visits: [c], end: c, cost: 1 }));
-      if (J.tokens.boat > 0) M.boat[J.pos].forEach(c => res.push({ type: 'boat', visits: [c], end: c, cost: 1 }));
+      if (J.tokens.alley > 0) M.alley[J.pos].forEach(c => { if (c !== target) res.push({ type: 'alley', visits: [c], end: c, cost: 1 }); });
+      if (J.tokens.boat > 0) M.boat[J.pos].forEach(c => { if (c !== target) res.push({ type: 'boat', visits: [c], end: c, cost: 1 }); });
     }
     if (left >= 2 && J.tokens.coach > 0) {
-      normalMoves(M, J.pos, det).forEach(a => normalMoves(M, a, det).forEach(b => {
-        if (b !== J.pos) res.push({ type: 'coach', visits: [a, b], end: b, cost: 2 });
-      }));
+      normalMoves(M, J.pos, det).forEach(a => { if (a !== target) normalMoves(M, a, det).forEach(b => {
+        if (b !== J.pos && b !== target) res.push({ type: 'coach', visits: [a, b], end: b, cost: 2 }); });
+      });
     }
     return res;
   }
@@ -84,7 +85,7 @@
       for (let i = 0; i < settings.nights; i++) {
         const used = targets.map(t => M.C[t].district);
         const d = S.dist(prev);
-        const opts = M.C.filter(c => c.district && !used.includes(c.district) && c.id !== start && !targets.includes(c.id)
+        const opts = M.C.filter(c => c.district && !c.bank && !used.includes(c.district) && c.id !== start && !targets.includes(c.id)
           && d[c.id] >= 3 && d[c.id] <= settings.limit - 3).map(c => c.id);
         if (!opts.length) { ok = false; break; }
         // Jack preferisce mete abbastanza lontane da confondere le acque ma raggiungibili con margine
@@ -187,7 +188,7 @@
   function publicTargets(M, settings, start0, prevTargets, from) {
     const used = prevTargets.map(t => M.C[t].district);
     const d = prepare(M).dist(from);
-    return M.C.filter(c => c.district && !used.includes(c.district) && c.id !== start0 && !prevTargets.includes(c.id)
+    return M.C.filter(c => c.district && !c.bank && !used.includes(c.district) && c.id !== start0 && !prevTargets.includes(c.id)
       && d[c.id] >= 3 && d[c.id] <= settings.limit - 3).map(c => c.id);
   }
 
@@ -220,7 +221,7 @@
       for (;;) {
         // --- Turno di Jack ---
         const L = settings.limit;
-        const opts = legalMoves(M, J, det, L - moves);
+        const opts = legalMoves(M, J, det, L - moves, target);
         if (!opts.length) return { winner: 'police', reason: 'surrounded', nights: night, turns: totalTurns };
         const mv = jackChoose(M, S, J, det, opts, dT, target, L - moves, ai, rnd, ai.jackStealth > 0 ? publicForward(M, info, det) : null);
         if (mv.type !== 'normal') J.tokens[mv.type]--;
@@ -259,7 +260,7 @@
           B = computeBelief(M, info);
         }
         // Jack circondato?
-        if (!legalMoves(M, J, det, L - moves).length) return { winner: 'police', reason: 'surrounded', nights: night, turns: totalTurns };
+        if (!legalMoves(M, J, det, L - moves, target).length) return { winner: 'police', reason: 'surrounded', nights: night, turns: totalTurns };
       }
     }
     return { winner: 'jack', reason: 'all', nights: settings.nights, turns: totalTurns };
