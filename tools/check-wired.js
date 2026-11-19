@@ -21,5 +21,7 @@ maps.forEach((def, i) => {
   const r = Sim.evaluate(M, Sim.DEFAULT_SETTINGS, games, 12345);
   const p = r.jackRate, ci = 1.96 * Math.sqrt(p * (1 - p) / r.games);
   console.log(`  Jack vince il ${(p * 100).toFixed(1)}% ±${(ci * 100).toFixed(1)} su ${r.games} partite simulate (regole standard)${r.invalid ? `, ${r.invalid} non giocabili` : ''}`);
+  const near = Sim.evaluate(M, Sim.DEFAULT_SETTINGS, games, 54321, { jackTargets: 'near' });
+  console.log(`  Se Jack sceglie sempre le mete più vicine: ${(near.jackRate * 100).toFixed(1)}%`);
 });
 process.exit(bad ? 1 : 0);

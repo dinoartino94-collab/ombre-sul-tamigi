@@ -4,7 +4,7 @@
   let M = MapGen.build();
   const SAVE_KEY = 'ombre-tamigi-save-v1';
   const SET_KEY = 'ombre-tamigi-settings-v2';
-  const DEFAULTS = { nights: 4, limit: 15, reveal: 5, revealLag: 3, specials: 2, cards: true, detectives: 3, mapMode: 'random', riverMode: 'random' };
+  const DEFAULTS = { nights: 4, limit: 15, reveal: 5, revealLag: 3, specials: 2, cards: true, detectives: 3, minDist: 6, mapMode: 'random', riverMode: 'random' };
   const CERTIFIED = typeof CERTIFIED_MAPS !== 'undefined' ? CERTIFIED_MAPS : [];
 
   // Cambia la mappa in uso (ricostruisce il disegno statico se il gioco e' gia' a schermo)
@@ -19,7 +19,7 @@
   const prefs = (() => { try { return Object.assign({ centerDet: true, jackRotate: false }, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { return { centerDet: true, jackRotate: false }; } })();
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
   const prefToggle = (key, label) => `<label class="opt"><input type="checkbox" data-pref="${key}" ${prefs[key] ? 'checked' : ''}><span>${label}</span></label>`;
-  const simSettings = s => ({ nights: s.nights, limit: s.limit, reveal: s.reveal, revealLag: s.revealLag, specials: s.specials, detectives: s.detectives });
+  const simSettings = s => ({ nights: s.nights, limit: s.limit, reveal: s.reveal, revealLag: s.revealLag, specials: s.specials, detectives: s.detectives, minDist: s.minDist });
   const DISTRICTS = { NO: 'Nord-Ovest', NE: 'Nord-Est', SO: 'Sud-Ovest', SE: 'Sud-Est' };
   const DETS = [
     { name: 'Ispettore Rosso', short: 'R', color: '#e05252' },
@@ -186,11 +186,12 @@
     const J = S.jack;
     if (J.start === null) return M.lanterns.slice();
     if (J.targets.length >= S.settings.nights) return [];
-    const prev = J.targets.length ? J.targets[J.targets.length - 1] : J.start;
-    const used = J.targets.map(t => M.C[t].district);
-    const d = M.dist(prev);
-    const maxD = S.settings.limit - 3;
-    return M.C.filter(c => c.district && !c.bank && !used.includes(c.district) && c.id !== J.start && !J.targets.includes(c.id) && d[c.id] >= 3 && d[c.id] <= maxD).map(c => c.id);
+    return targetRange().opts;
+  }
+  // Mete permesse e distanze minima/massima per la prossima scelta di Jack (regola unica: Sim.targetOptions)
+  function targetRange() {
+    const J = S.jack;
+    return Sim.targetOptions(M, S.settings, J.start, J.targets, J.targets.length ? J.targets[J.targets.length - 1] : J.start);
   }
 
   // La Polizia si schiera solo sui posti di guardia, prima che Jack scelga la partenza
@@ -223,7 +224,7 @@
   function startNight() {
     S.turn = 0; S.moves = 0;
     S.clues = []; S.searched = []; S.reveals = [];
-    S.pendingReveal = null; S.revealShow = false;
+    S.pendingReveal = null; S.revealShow = false; S.arrived = false;
     S.jack.extraLimit = 0; S.pt = null; // S.slow (Folla) resta valido per il prossimo turno della Polizia
     S.jack.path = [S.jack.pos];
     S.posAt = [S.jack.pos];
@@ -266,8 +267,10 @@
     else addLog(`Turno ${S.turn}: Jack usa ${SPECIAL[mode].icon} ${SPECIAL[mode].name} (${S.moves}/${L} mosse)`, 'special');
     U = {};
 
-    if (J.pos === currentTarget()) { crimeReached(); return; }
-    if (S.moves >= L) { endGame('police', `Jack non ha raggiunto la sua meta entro ${L} mosse.`); return; }
+    // Arrivato alla meta: resta un segreto. L'ultima mossa spetta alla Polizia, che puo' ancora arrestarlo
+    // (vedi endPoliceTurn); solo dopo il delitto viene annunciato.
+    S.arrived = J.pos === currentTarget();
+    if (!S.arrived && S.moves >= L) { endGame('police', `Jack non ha raggiunto la sua meta entro ${L} mosse.`); return; }
 
     const R = S.settings.reveal;
     if (R > 0 && S.turn % R === 0) {
@@ -319,6 +322,7 @@
 
   function endPoliceTurn() {
     S.pt = null;
+    if (S.arrived) { S.arrived = false; crimeReached(); return; }
     if (!jackHasAnyMove()) { endGame('police', 'Jack è circondato: non ha più vie di fuga!'); return; }
     S.phase = 'jackTurn';
     S.handoff = 'jack';
@@ -389,7 +393,9 @@
   function arrestAt(i, c) {
     const name = DETS[i].name;
     if (c === S.jack.pos) {
-      endGame('police', `${name} ha arrestato Jack al luogo ${num(c)}!`);
+      endGame('police', S.arrived
+        ? `${name} ha arrestato Jack al luogo ${num(c)}, proprio dove stava per colpire!`
+        : `${name} ha arrestato Jack al luogo ${num(c)}!`);
       return true;
     }
     addLog(`⛓ ${name}: arresto fallito al luogo ${num(c)}.`);
@@ -1002,7 +1008,7 @@
       const need = S.settings.nights;
       let hint;
       if (J.start === null) hint = 'I detective sono già schierati. Tocca uno dei 4 lampioni ✦ evidenziati: sarà il tuo punto di partenza (verrà rivelato alla Polizia).';
-      else if (J.targets.length < need) hint = `Tocca il luogo del delitto per la <b>notte ${J.targets.length + 1}</b>. Deve stare in un distretto non ancora usato e a ${3}–${S.settings.limit - 3} passi dalla posizione precedente.`;
+      else if (J.targets.length < need) hint = `Tocca il luogo del delitto per la <b>notte ${J.targets.length + 1}</b>. Deve stare in un distretto non ancora usato e a ${targetRange().min}–${S.settings.limit - 3} passi dalla posizione precedente.`;
       else hint = 'Piano completo. Conferma per iniziare: poi passa il dispositivo alla Polizia.';
       if (J.start !== null && J.targets.length < need && !opts.length) hint = 'Nessun luogo valido da qui: annulla l’ultima scelta e riprova.';
       const list = [`<span class="chip ${J.start !== null ? 'red' : ''}">Partenza: ${J.start !== null ? num(J.start) : '—'}</span>`]
@@ -1196,7 +1202,7 @@
           <li>La città ha 4 distretti: Nord-Ovest, Nord-Est, Sud-Ovest, Sud-Est.</li>
         </ul>
         <h3>Preparazione</h3>
-        <p>La Polizia schiera per prima i detective sui <b>posti di guardia ⚑</b> (6 incroci, 3 a Nord e 3 a Sud). Poi Jack, vedendo dove sono, sceglie in segreto uno dei 4 lampioni ✦ come partenza (verrà rivelato) e un luogo del delitto per ogni notte, ognuno in un distretto diverso.</p>
+        <p>La Polizia schiera per prima i detective sui <b>posti di guardia ⚑</b> (6 incroci, 3 a Nord e 3 a Sud). Poi Jack, vedendo dove sono, sceglie in segreto uno dei 4 lampioni ✦ come partenza (verrà rivelato) e un luogo del delitto per ogni notte, ognuno in un distretto diverso e ad almeno 6 passi dal luogo precedente (meno solo se la mappa è troppo piccola).</p>
         <p>I detective <b>non vengono ricollocati</b> tra una notte e l'altra: ripartono da dove si trovano.</p>
         <h3>Turno di Jack</h3>
         <ul>
@@ -1206,12 +1212,13 @@
           <li><b>${SPECIAL.boat.icon} Barca</b>: ${SPECIAL.boat.desc}</li>
           <li>L'uso di una mossa speciale è annunciato alla Polizia (ma non la destinazione). Ogni gettone si usa una volta per partita (di base 2 per tipo).</li>
           <li><b>Nessuna mossa speciale può entrare nel luogo della meta</b>: il delitto si raggiunge solo con un movimento normale.</li>
-          <li>Ogni movimento costa 1 mossa (Carrozza 2). Raggiunta la meta, il delitto viene rivelato e inizia la notte successiva da quel luogo.</li>
+          <li>Ogni movimento costa 1 mossa (Carrozza 2).</li>
+          <li><b>L'ultima mossa è della Polizia</b>: quando Jack raggiunge la meta non lo dice. La Polizia gioca ancora il suo turno e può arrestarlo lì; se non ci riesce, il delitto viene rivelato e la notte successiva inizia da quel luogo (o, all'ultima notte, Jack vince).</li>
         </ul>
         <h3>Rivelazione periodica</h3>
         <p>Ogni X turni di Jack (impostabile), all'inizio del turno della Polizia un testimone rivela dove si trovava Jack. Con il ritardo standard (3 turni) viene mostrato il luogo in cui era 3 turni prima. Si può impostare il ritardo a 0 (posizione attuale), ma le simulazioni mostrano che così Jack vince solo ~6% delle partite. Il punto resta segnato in viola per tutta la notte.</p>
         <h3>Mappe e bilanciamento</h3>
-        <p>Le mappe casuali hanno la scala del gioco da tavolo di riferimento (~189 luoghi, 3 detective). Ogni mappa viene provata simulando molte partite tra due IA. La Polizia usa solo informazioni pubbliche. Si tiene la mappa in cui Jack vince circa il 50% delle volte con le regole scelte. La mappa "Piccola" (64 luoghi) è più veloce ma favorisce la Polizia.</p>
+        <p>Le mappe casuali hanno la scala del gioco da tavolo di riferimento (~189 luoghi, 3 detective). Ogni mappa viene provata simulando molte partite tra due IA. La Polizia usa solo informazioni pubbliche. Si tiene la mappa in cui Jack vince circa il 50% delle volte con le regole scelte, sia quando sceglie le mete a caso sia quando sceglie sempre le più vicine. La mappa "Piccola" (64 luoghi) è più veloce ma favorisce la Polizia.</p>
         <h3>Turno della Polizia</h3>
         <ul>
           <li>Ogni detective si muove fino a <b>2 incroci</b> (può attraversare incroci occupati ma non fermarsi su di essi), poi compie un'azione:</li>
@@ -1348,8 +1355,8 @@
     if (s.mapMode === 'certified' && certList.length) {
       const m = certList[Math.floor(Math.random() * certList.length)];
       const std = Sim.DEFAULT_SETTINGS;
-      const same = ['nights', 'limit', 'reveal', 'revealLag', 'specials', 'detectives'].every(k => s[k] === std[k]);
-      return newGame(s, { params: m.params, name: `Certificata #${m.params.seed}`, jackRate: same ? m.jackRate : null, ci95: m.ci95, games: m.games });
+      const same = ['nights', 'limit', 'reveal', 'revealLag', 'specials', 'detectives', 'minDist'].every(k => s[k] === std[k]);
+      return newGame(s, { params: m.params, name: `Certificata #${m.params.seed}`, jackRate: same ? m.jackRate : null, nearRate: same ? m.nearRate : null, ci95: m.ci95, games: m.games });
     }
     // Generazione bilanciata dal vivo, per le regole scelte
     const sc = ensureScreen();
@@ -1358,7 +1365,7 @@
     sc.innerHTML = `<div class="inner">
       <div class="big">🗺️</div>
       <h1>Disegno la città…</h1>
-      <p>Genero mappe casuali e simulo partite tra Jack e la Polizia per tenere quella più equilibrata.</p>
+      <p>Genero mappe casuali e simulo partite tra Jack e la Polizia per tenere quella più equilibrata, anche contro un Jack che sceglie sempre le mete più vicine.</p>
       <div class="progress"><div class="bar" style="width:0%"></div></div>
       <p class="note gen-info">Preparazione…</p>
       <button data-act="gen-cancel">Usa la migliore trovata finora</button>
@@ -1375,7 +1382,7 @@
     });
     const b = res.best;
     if (!b) return newGame(s, { params: null, name: 'Piccola (64 luoghi)', jackRate: null });
-    return newGame(s, { params: b.params, name: `Casuale #${b.params.seed}`, jackRate: b.rate, ci95: b.ci95, games: b.games, balanced: res.balanced });
+    return newGame(s, { params: b.params, name: `Casuale #${b.params.seed}`, jackRate: b.rate, nearRate: b.nearRate, ci95: b.ci95, games: b.games, balanced: res.balanced });
   }
 
   // Una partita ripresa riparte sempre da una schermata di copertura
@@ -1404,6 +1411,7 @@
           specials: +f.specials.value, detectives: +f.detectives.value, cards: f.cards.checked,
           revealLag: +f.revealLag.value, mapMode: f.mapMode.value, riverMode: f.riverMode.value,
           wiredId: (document.querySelector('#wiredbox [name=wiredId]') || {}).value || null,
+          minDist: DEFAULTS.minDist,
         };
         saveSettings(s);
         return startWithMap(s);
@@ -1418,7 +1426,7 @@
         S.phase = 'jackTurn'; S.handoff = 'jack'; U = {}; return render();
       case 'menu':
         return showModal(`<h2>☰ Menu</h2><p>La partita viene salvata automaticamente su questo dispositivo.</p>
-          <p style="font-size:14px;color:var(--ink2)">Mappa: ${esc(S.map && S.map.name ? S.map.name : 'Piccola (64 luoghi)')} · ${M.C.length} luoghi${S.map && S.map.jackRate != null ? ` · nelle simulazioni Jack vince il ${Math.round(S.map.jackRate * 100)}%${S.map.ci95 ? ` ±${Math.round(S.map.ci95 * 100)}` : ''} (${S.map.games} partite di conferma)${S.map.balanced === false ? ' · non è stata trovata una mappa entro la tolleranza: è la più vicina' : ''}` : ''}</p>
+          <p style="font-size:14px;color:var(--ink2)">Mappa: ${esc(S.map && S.map.name ? S.map.name : 'Piccola (64 luoghi)')} · ${M.C.length} luoghi${S.map && S.map.jackRate != null ? ` · nelle simulazioni Jack vince il ${Math.round(S.map.jackRate * 100)}%${S.map.ci95 ? ` ±${Math.round(S.map.ci95 * 100)}` : ''} (${S.map.games} partite di conferma)${S.map.nearRate != null ? `, il ${Math.round(S.map.nearRate * 100)}% se sceglie sempre le mete più vicine` : ''}${S.map.balanced === false ? ' · non è stata trovata una mappa entro la tolleranza: è la più vicina' : ''}` : ''}</p>
           <div class="menu-btns" style="max-width:none">
             <button data-act="close-modal" class="primary">Riprendi</button>
             <button data-act="guide">🌍 Guida rapida · Guide · Quick start</button>

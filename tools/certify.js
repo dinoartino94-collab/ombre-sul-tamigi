@@ -1,6 +1,8 @@
 // Crea js/maps-certified.js: mappe casuali a scala benchmark (~189 luoghi) con vittorie di Jack ~50%.
 // Screening (80 + 400 partite) solo per scegliere i candidati; la percentuale registrata viene da una
 // CONFERMA indipendente su altri semi (default 2000 partite), con intervallo di confidenza al 95%.
+// La mappa deve restare equilibrata anche contro il Jack "furbo" che sceglie sempre le mete piu' vicine:
+// la sua percentuale (nearRate, altre partite di conferma) deve stare tra 45% e 55%.
 // node tools/certify.js [quante per tipo di fiume=6] [conferma=2000] [tipi=random,none,full]
 // Tipi di fiume: random (intero/corto/lago/spezzato), none (senza fiume), full (da bordo a bordo).
 // Con [tipi] si rigenerano solo quelli indicati: le mappe degli altri tipi restano quelle gia' nel file.
@@ -11,6 +13,7 @@ const Sim = require('../js/sim.js');
 const want = +process.argv[2] || 6;
 const confirmGames = +process.argv[3] || 2000;
 const settings = Object.assign({}, Sim.DEFAULT_SETTINGS);
+const NEAR = { jackTargets: 'near' };
 const ALL_MODES = ['random', 'none', 'full'];
 const modes = process.argv[4] ? process.argv[4].split(',') : ALL_MODES;
 const file = path.join(__dirname, '..', 'js', 'maps-certified.js');
@@ -29,16 +32,23 @@ for (let s = 1; out.length - before < want && s < 600; s++) {
   if (Math.abs(quick.jackRate - 0.5) > 0.1) continue;
   const scr = Sim.evaluate(M, settings, 400, seed + 1);
   if (Math.abs(scr.jackRate - 0.5) > 0.05) { console.log(`seed ${seed} screening ${(scr.jackRate * 100).toFixed(1)}% scartata`); continue; }
+  const scrNear = Sim.evaluate(M, settings, 400, seed + 2, NEAR);
+  if (Math.abs(scrNear.jackRate - 0.5) > 0.06) { console.log(`seed ${seed} screening Jack furbo ${(scrNear.jackRate * 100).toFixed(1)}% scartata`); continue; }
   const conf = Sim.evaluate(M, settings, confirmGames, (seed ^ 0x5bd1e995) >>> 0);
   const p = conf.jackRate, ci = 1.96 * Math.sqrt(p * (1 - p) / conf.games);
-  const ok = p - ci >= 0.45 && p + ci <= 0.55;
-  console.log(`[${riverMode}] seed ${seed} ${params.cols}x${params.rows} luoghi=${st.locations} conferma=${(p * 100).toFixed(1)}% ±${(ci * 100).toFixed(1)} ${ok ? 'OK' : 'scartata'}`);
-  if (ok) out.push({ params, jackRate: +p.toFixed(3), ci95: +ci.toFixed(3), games: conf.games, locations: st.locations });
+  let ok = p - ci >= 0.45 && p + ci <= 0.55, pn = null;
+  if (ok) {
+    pn = Sim.evaluate(M, settings, confirmGames, (seed ^ 0x2545f491) >>> 0, NEAR).jackRate;
+    ok = pn >= 0.45 && pn <= 0.55;
+  }
+  console.log(`[${riverMode}] seed ${seed} ${params.cols}x${params.rows} luoghi=${st.locations} conferma=${(p * 100).toFixed(1)}% ±${(ci * 100).toFixed(1)}${pn === null ? '' : ` furbo=${(pn * 100).toFixed(1)}%`} ${ok ? 'OK' : 'scartata'}`);
+  if (ok) out.push({ params, jackRate: +p.toFixed(3), nearRate: +pn.toFixed(3), ci95: +ci.toFixed(3), games: conf.games, locations: st.locations });
 }
 }
 fs.writeFileSync(file, `'use strict';
 // Generato da tools/certify.js — percentuale di vittorie di Jack misurata su ${confirmGames} partite
 // simulate indipendenti (non quelle usate per la selezione), con intervallo di confidenza al 95%.
+// nearRate: la stessa misura con un Jack che sceglie sempre le mete piu' vicine.
 // Regole: ${JSON.stringify(settings)}
 const CERTIFIED_MAPS = ${JSON.stringify(out, null, 1)};
 if (typeof module !== 'undefined' && module.exports) module.exports = CERTIFIED_MAPS;

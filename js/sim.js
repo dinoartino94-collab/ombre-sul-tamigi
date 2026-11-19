@@ -21,10 +21,14 @@
     };
   }
 
-  const DEFAULT_SETTINGS = { nights: 4, limit: 15, reveal: 5, revealLag: 3, specials: 2, detectives: 3 };
+  const DEFAULT_SETTINGS = { nights: 4, limit: 15, reveal: 5, revealLag: 3, specials: 2, detectives: 3, minDist: 6 };
+  const MIN_DIST_FLOOR = 3;
   const MAX_CLUE_BITS = 5;
   // Parametri IA scelti con una ricerca a griglia per rendere entrambe le IA il piu' forti possibile
-  const DEFAULT_AI = { jackDanger: 0.8, jackNoise: 0.4, jackRush: 2.5, jackStealth: 2, policeArrest: 0.3, policeNoise: 0.05, policeTargetInfo: true };
+  // jackTargets: come Jack sceglie le mete. 'random' = a caso tra quelle permesse; 'near' = sempre la piu' vicina
+  // (il Jack "furbo": meno turni, meno indizi). Le mappe si certificano contro entrambi.
+  const DEFAULT_AI = { jackDanger: 0.8, jackNoise: 0.4, jackRush: 2.5, jackStealth: 2, policeArrest: 0.3, policeNoise: 0.05, policeTargetInfo: true, jackTargets: 'random' };
+  const TARGET_POLICIES = ['random', 'near'];
 
   // ---------- cache per mappa ----------
   function prepare(M) {
@@ -68,8 +72,25 @@
     return res;
   }
 
+  /*
+   * Mete permesse per la prossima notte: in un distretto non ancora usato, mai sui luoghi blu, a distanza
+   * min..max dal luogo precedente (from). min = settings.minDist (3 nelle partite salvate prima di questa
+   * regola); se la mappa e' troppo piccola per avere mete cosi' lontane, min scende fino a 3.
+   * E' l'unica definizione della regola: la usano la schermata di Jack, l'IA di Jack e la Polizia.
+   */
+  function targetOptions(M, settings, start, targets, from) {
+    const used = targets.map(t => M.C[t].district);
+    const d = prepare(M).dist(from);
+    const max = settings.limit - 3;
+    const free = M.C.filter(c => c.district && !c.bank && !used.includes(c.district) && c.id !== start && !targets.includes(c.id) && d[c.id] <= max);
+    let min = Math.max(MIN_DIST_FLOOR, Math.min(settings.minDist || MIN_DIST_FLOOR, max));
+    let opts = free.filter(c => d[c.id] >= min);
+    while (!opts.length && min > MIN_DIST_FLOOR) { min--; opts = free.filter(c => d[c.id] >= min); }
+    return { min, max, opts: opts.map(c => c.id), dist: d };
+  }
+
   // Scelta delle mete (stesse regole della schermata di Jack)
-  function chooseTargets(M, settings, rnd, det) {
+  function chooseTargets(M, settings, rnd, det, policy) {
     const S = prepare(M);
     // Jack sceglie il lampione piu' lontano dai detective gia' schierati (con un po' di casualita')
     let ranked = M.lanterns.slice();
@@ -83,13 +104,12 @@
       const targets = [];
       let prev = start, ok = true;
       for (let i = 0; i < settings.nights; i++) {
-        const used = targets.map(t => M.C[t].district);
-        const d = S.dist(prev);
-        const opts = M.C.filter(c => c.district && !c.bank && !used.includes(c.district) && c.id !== start && !targets.includes(c.id)
-          && d[c.id] >= 3 && d[c.id] <= settings.limit - 3).map(c => c.id);
+        const { opts, dist: d } = targetOptions(M, settings, start, targets, prev);
         if (!opts.length) { ok = false; break; }
-        // Jack preferisce mete abbastanza lontane da confondere le acque ma raggiungibili con margine
-        const w = opts.map(c => { const x = d[c]; return x >= 5 && x <= settings.limit - 5 ? 3 : 1; });
+        // 'near': sempre una delle piu' vicine. Altrimenti Jack preferisce mete abbastanza lontane da
+        // confondere le acque ma raggiungibili con margine
+        const lo = Math.min(...opts.map(c => d[c]));
+        const w = opts.map(c => { const x = d[c]; return policy === 'near' ? +(x === lo) : x >= 5 && x <= settings.limit - 5 ? 3 : 1; });
         let r = rnd() * w.reduce((a, b) => a + b, 0), pick = opts[0];
         for (let k = 0; k < opts.length; k++) { r -= w[k]; if (r <= 0) { pick = opts[k]; break; } }
         targets.push(pick); prev = pick;
@@ -162,7 +182,7 @@
     }
     const prob = new Float64Array(M.C.length);
     for (const [k, w] of states) prob[Math.floor(k / 64)] += w;
-    // Informazione pubblica sulla meta: sta in un distretto non ancora usato, a distanza 3..limite-3
+    // Informazione pubblica sulla meta: sta in un distretto non ancora usato, a distanza minima..limite-3
     // dal delitto precedente. Le posizioni da cui non si arriva in tempo a nessuna meta possibile
     // (a piedi) sono poco probabili (non escluse: con le mosse speciali Jack puo' accorciare).
     if (info.targetDist && info.left !== undefined) {
@@ -186,10 +206,7 @@
 
   // Mete possibili note alla Polizia all'inizio di una notte (stesse regole della scelta di Jack)
   function publicTargets(M, settings, start0, prevTargets, from) {
-    const used = prevTargets.map(t => M.C[t].district);
-    const d = prepare(M).dist(from);
-    return M.C.filter(c => c.district && !c.bank && !used.includes(c.district) && c.id !== start0 && !prevTargets.includes(c.id)
-      && d[c.id] >= 3 && d[c.id] <= settings.limit - 3).map(c => c.id);
+    return targetOptions(M, settings, start0, prevTargets, from).opts;
   }
 
   // ---------- Simulazione di una partita ----------
@@ -201,7 +218,7 @@
     // Regola "posti di guardia": la Polizia si schiera sui posti di guardia PRIMA che Jack scelga la partenza,
     // e i detective restano dove sono tra una notte e l'altra (nessun ricollocamento).
     let det = settings.replace ? new Array(settings.detectives).fill(null) : stationPlacement(M, settings.detectives, rnd);
-    const plan = chooseTargets(M, settings, rnd, settings.replace ? null : det);
+    const plan = chooseTargets(M, settings, rnd, settings.replace ? null : det, ai.jackTargets);
     if (!plan) return { winner: 'invalid', reason: 'no-targets', nights: 0, turns: 0 };
     const J = { pos: plan.start, path: [plan.start], tokens: { coach: settings.specials, alley: settings.specials, boat: settings.specials } };
     let totalTurns = 0;
@@ -229,8 +246,9 @@
         moves += mv.cost; turn++; totalTurns++;
         J.pos = mv.end;
         info.turns.push({ type: mv.type, det: det.slice() });
-        if (J.pos === target) break;
-        if (moves >= L) return { winner: 'police', reason: 'time', nights: night, turns: totalTurns };
+        // Arrivo alla meta: resta segreto, la Polizia gioca ancora il suo turno e puo' arrestarlo li'
+        const arrived = J.pos === target;
+        if (!arrived && moves >= L) return { winner: 'police', reason: 'time', nights: night, turns: totalTurns };
         posAt[turn] = J.pos;
         if (settings.reveal > 0 && turn % settings.reveal === 0) {
           const lag = Math.min(settings.revealLag || 0, turn);
@@ -259,6 +277,7 @@
           }
           B = computeBelief(M, info);
         }
+        if (arrived) break; // il delitto viene annunciato: si passa alla notte successiva
         // Jack circondato?
         if (!legalMoves(M, J, det, L - moves, target).length) return { winner: 'police', reason: 'surrounded', nights: night, turns: totalTurns };
       }
@@ -440,7 +459,8 @@
 
   /*
    * Generatore bilanciato: prova mappe casuali e tiene quella con la percentuale di vittorie di Jack
-   * piu' vicina al 50% (dentro la tolleranza), misurata simulando partite IA contro IA.
+   * piu' vicina al 50% (dentro la tolleranza), misurata simulando partite IA contro IA, sia con il Jack
+   * che sceglie le mete a caso sia con quello che sceglie sempre le piu' vicine (conta lo scarto peggiore).
    * Asincrono a blocchi per non bloccare l'interfaccia. onProgress(frac, info).
    */
   async function generateBalanced(MapGen, settings, opts) {
@@ -453,10 +473,10 @@
     const stop = () => !!(best && opts.shouldStop && opts.shouldStop());
     const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     let lastYield = now();
-    const run = async (M, n, seedBase, i, phaseFrac) => {
+    const run = async (M, n, seedBase, i, phaseFrac, ai) => {
       const r = { games: 0, jack: 0 };
       for (let g = 0; g < n; g++) {
-        const res = simulate(M, settings, (seedBase + g * 7919) >>> 0);
+        const res = simulate(M, settings, (seedBase + g * 7919) >>> 0, ai);
         if (res.winner !== 'invalid') { r.games++; if (res.winner === 'jack') r.jack++; }
         // cede il controllo all'interfaccia al massimo ogni ~40 ms (non a ogni partita)
         if (opts.onProgress && now() - lastYield > 40) {
@@ -478,11 +498,17 @@
       if (stop()) break;
       const sRate = scr.games ? scr.jack / scr.games : 0;
       if (Math.abs(sRate - opts.target) > opts.tolerance + 0.05) { results.push({ params, screenRate: sRate, rejected: true }); continue; }
-      const conf = await run(M, opts.confirmGames, (seed ^ 0xABCDEF) >>> 0, i, f => 0.3 + f * 0.7);
+      const conf = await run(M, opts.confirmGames, (seed ^ 0xABCDEF) >>> 0, i, f => 0.3 + f * 0.35);
       if (!conf.games) continue;
       const rate = conf.jack / conf.games;
       const se = Math.sqrt(rate * (1 - rate) / conf.games);
       const item = { params, rate, games: conf.games, ci95: 1.96 * se, screenRate: sRate, structure: st, err: Math.abs(rate - opts.target) };
+      // Jack "furbo" (sceglie sempre le mete piu' vicine): la mappa deve restare equilibrata anche contro di lui.
+      // Si salta se la mappa e' gia' chiaramente fuori tolleranza.
+      if (item.err <= opts.tolerance + 0.03) {
+        const near = await run(M, opts.confirmGames, (seed ^ 0x13579B) >>> 0, i, f => 0.65 + f * 0.35, { jackTargets: 'near' });
+        if (near.games >= opts.confirmGames / 2) { item.nearRate = near.jack / near.games; item.err = Math.max(item.err, Math.abs(item.nearRate - opts.target)); }
+      }
       results.push(item);
       if (!best || item.err < best.err) best = item;
       if (item.err <= opts.tolerance) break; // confermata bilanciata
@@ -491,5 +517,5 @@
     return { best, balanced: !!best && best.err <= opts.tolerance, results };
   }
 
-  return { simulate, evaluate, structure, computeBelief, generateBalanced, chooseTargets, DEFAULT_SETTINGS, mulberry32 };
+  return { simulate, evaluate, structure, computeBelief, generateBalanced, chooseTargets, targetOptions, DEFAULT_SETTINGS, TARGET_POLICIES, mulberry32 };
 });
