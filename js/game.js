@@ -590,12 +590,19 @@
 
   function buildStatic() {
     let h = `<rect x="-2000" y="-2000" width="${M.W + 4000}" height="${M.H + 4000}" fill="var(--ground)"/>`;
+    // Cornice della mappa: il rettangolo delle strade più un piccolo margine. Fiume e confini dei distretti
+    // vengono tagliati qui, così non escono mai dalla mappa (né nelle casuali né nelle cablate).
+    const fr = M.J.reduce((b, j) => [Math.min(b[0], j.x), Math.min(b[1], j.y), Math.max(b[2], j.x), Math.max(b[3], j.y)], [Infinity, Infinity, -Infinity, -Infinity]);
+    const FRAME = 45;
+    h += `<defs><clipPath id="mapframe"><rect x="${fr[0] - FRAME}" y="${fr[1] - FRAME}" width="${fr[2] - fr[0] + 2 * FRAME}" height="${fr[3] - fr[1] + 2 * FRAME}"/></clipPath></defs>`;
     // Tratti d'acqua (fiume intero, corto, lago o spezzato; nessuno nelle mappe senza fiume)
+    h += '<g clip-path="url(#mapframe)">';
     M.waters.forEach(w => {
       const rv = w.map(p => p.join(',')).join(' ');
       h += `<polyline class="river-edge" points="${rv}"/><polyline class="river" points="${rv}"/>`;
       [-30, 0, 30].forEach(off => { h += `<polyline class="river-wave" points="${w.map(p => p[0] + ',' + (p[1] + off)).join(' ')}"/>`; });
     });
+    h += '</g>';
     M.cells.forEach(cell => {
       const pts = cell.corners.map(id => M.J[id]);
       const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length, cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
@@ -619,8 +626,8 @@
       if (c.noLoc) h += `<line class="street-long" x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`;
     });
     // Confini dei 4 distretti: linee rosse tratteggiate (Nord/Sud a meta' mappa e a zig-zag tra Ovest ed Est)
-    h += `<polyline class="divider" points="${M.nsLine.map(p => p.join(',')).join(' ')}"/>`;
-    h += `<polyline class="divider" points="${M.divider.map(p => p.join(',')).join(' ')}"/>`;
+    h += `<g clip-path="url(#mapframe)"><polyline class="divider" points="${M.nsLine.map(p => p.join(',')).join(' ')}"/>`;
+    h += `<polyline class="divider" points="${M.divider.map(p => p.join(',')).join(' ')}"/></g>`;
     [['NORD-OVEST', 0.25, 38], ['NORD-EST', 0.75, 38], ['SUD-OVEST', 0.25, M.H - 26], ['SUD-EST', 0.75, M.H - 26]].forEach(([t, fx, y]) => {
       h += `<text class="quad-label" x="${M.W * fx}" y="${y}">${t}</text>`;
     });
@@ -1008,7 +1015,10 @@
       const need = S.settings.nights;
       let hint;
       if (J.start === null) hint = 'I detective sono già schierati. Tocca uno dei 4 lampioni ✦ evidenziati: sarà il tuo punto di partenza (verrà rivelato alla Polizia).';
-      else if (J.targets.length < need) hint = `Tocca il luogo del delitto per la <b>notte ${J.targets.length + 1}</b>. Deve stare in un distretto non ancora usato e a ${targetRange().min}–${S.settings.limit - 3} passi dalla posizione precedente.`;
+      else if (J.targets.length < need) {
+        const tr = targetRange();
+        hint = `Tocca il luogo del delitto per la <b>notte ${J.targets.length + 1}</b>. Deve stare in un distretto non ancora usato e a ${tr.min}–${tr.max} passi dalla posizione precedente.${tr.min < tr.wanted ? ` La distanza minima è scesa da ${tr.wanted} a ${tr.min} per lasciarti più scelta.` : ''}`;
+      }
       else hint = 'Piano completo. Conferma per iniziare: poi passa il dispositivo alla Polizia.';
       if (J.start !== null && J.targets.length < need && !opts.length) hint = 'Nessun luogo valido da qui: annulla l’ultima scelta e riprova.';
       const list = [`<span class="chip ${J.start !== null ? 'red' : ''}">Partenza: ${J.start !== null ? num(J.start) : '—'}</span>`]
@@ -1170,6 +1180,7 @@
       <form class="box" id="setform" onsubmit="return false">
         <div class="form-row"><label>Notti (delitti)<small>Jack deve colpire in ogni notte</small></label>${sel('nights', [3, 4], s.nights)}</div>
         <div class="form-row"><label>Mosse per notte<small>Limite per raggiungere la meta</small></label>${sel('limit', [12, 13, 14, 15, 16, 17, 18, 20], s.limit)}</div>
+        <div class="form-row"><label>Distanza minima delle mete<small>Passi tra un delitto e il successivo (6 = bilanciato). Si abbassa da sola, mai sotto 3, se a Jack restano meno di ${Sim.MIN_TARGET_CHOICES} mete tra cui scegliere</small></label>${sel('minDist', [3, 4, 5, 6, 7], s.minDist || DEFAULTS.minDist, v => v + ' passi')}</div>
         <div class="form-row"><label>Mappa<small>Le casuali hanno ~189 luoghi e sono verificate con partite simulate</small></label>${sel('mapMode', ['random', 'certified', 'classic', 'wired'], s.mapMode, v => ({ random: 'Casuale bilanciata (nuova)', certified: 'Casuale certificata (istantanea)', classic: 'Piccola (64 luoghi)', wired: 'Cablata (da file JSON)' }[v]))}</div>
         <div class="form-row"><label>Fiume<small>Casuale: intero, corto, lago interno o spezzato, sempre sul confine Nord/Sud. Non vale per la mappa Piccola né per le cablate.</small></label>${sel('riverMode', ['random', 'none', 'full'], s.riverMode || 'random', v => ({ random: 'Casuale', none: 'Nessun fiume', full: 'Intero (da bordo a bordo)' }[v]))}</div>
         <div class="form-row"><label>Rivelazione ogni X turni<small>All'inizio del turno della Polizia un testimone rivela dove si trovava Jack</small></label>${sel('reveal', [0, 3, 4, 5, 6, 7], s.reveal, v => (v ? 'ogni ' + v : 'mai'))}</div>
@@ -1202,7 +1213,7 @@
           <li>La città ha 4 distretti: Nord-Ovest, Nord-Est, Sud-Ovest, Sud-Est.</li>
         </ul>
         <h3>Preparazione</h3>
-        <p>La Polizia schiera per prima i detective sui <b>posti di guardia ⚑</b> (6 incroci, 3 a Nord e 3 a Sud). Poi Jack, vedendo dove sono, sceglie in segreto uno dei 4 lampioni ✦ come partenza (verrà rivelato) e un luogo del delitto per ogni notte, ognuno in un distretto diverso e ad almeno 6 passi dal luogo precedente (meno solo se la mappa è troppo piccola).</p>
+        <p>La Polizia schiera per prima i detective sui <b>posti di guardia ⚑</b> (6 incroci, 3 a Nord e 3 a Sud). Poi Jack, vedendo dove sono, sceglie in segreto uno dei 4 lampioni ✦ come partenza (verrà rivelato) e un luogo del delitto per ogni notte, ognuno in un distretto diverso e ad almeno 6 passi dal luogo precedente. La distanza minima si imposta da 3 a 7 e si adatta: se a Jack restano meno di ${Sim.MIN_TARGET_CHOICES} mete tra cui scegliere scende di un passo alla volta, mai sotto 3, così non è mai costretto a una meta obbligata.</p>
         <p>I detective <b>non vengono ricollocati</b> tra una notte e l'altra: ripartono da dove si trovano.</p>
         <h3>Turno di Jack</h3>
         <ul>
@@ -1411,7 +1422,7 @@
           specials: +f.specials.value, detectives: +f.detectives.value, cards: f.cards.checked,
           revealLag: +f.revealLag.value, mapMode: f.mapMode.value, riverMode: f.riverMode.value,
           wiredId: (document.querySelector('#wiredbox [name=wiredId]') || {}).value || null,
-          minDist: DEFAULTS.minDist,
+          minDist: +f.minDist.value,
         };
         saveSettings(s);
         return startWithMap(s);

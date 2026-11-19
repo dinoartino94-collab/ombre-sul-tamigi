@@ -22,7 +22,8 @@
   }
 
   const DEFAULT_SETTINGS = { nights: 4, limit: 15, reveal: 5, revealLag: 3, specials: 2, detectives: 3, minDist: 6 };
-  const MIN_DIST_FLOOR = 3;
+  const MIN_DIST_FLOOR = 3, MIN_DIST_CEIL = 7; // limiti della distanza minima delle mete
+  const MIN_TARGET_CHOICES = 8;                // sotto questo numero di mete possibili la distanza minima si abbassa
   const MAX_CLUE_BITS = 5;
   // Parametri IA scelti con una ricerca a griglia per rendere entrambe le IA il piu' forti possibile
   // jackTargets: come Jack sceglie le mete. 'random' = a caso tra quelle permesse; 'near' = sempre la piu' vicina
@@ -74,19 +75,23 @@
 
   /*
    * Mete permesse per la prossima notte: in un distretto non ancora usato, mai sui luoghi blu, a distanza
-   * min..max dal luogo precedente (from). min = settings.minDist (3 nelle partite salvate prima di questa
-   * regola); se la mappa e' troppo piccola per avere mete cosi' lontane, min scende fino a 3.
+   * min..max dal luogo precedente (from). La distanza minima e' adattiva: parte da settings.minDist
+   * (impostabile da 3 a 7; 3 nelle partite salvate prima di questa regola) e scende di un passo alla volta,
+   * mai sotto 3, finche' Jack non ha almeno MIN_TARGET_CHOICES mete tra cui scegliere. Cosi' l'ultimo
+   * distretto rimasto non lo costringe mai a una meta obbligata che la Polizia potrebbe indovinare.
    * E' l'unica definizione della regola: la usano la schermata di Jack, l'IA di Jack e la Polizia.
+   * Restituisce anche wanted (il minimo richiesto), per dire al giocatore quando e' stato abbassato.
    */
   function targetOptions(M, settings, start, targets, from) {
     const used = targets.map(t => M.C[t].district);
     const d = prepare(M).dist(from);
     const max = settings.limit - 3;
     const free = M.C.filter(c => c.district && !c.bank && !used.includes(c.district) && c.id !== start && !targets.includes(c.id) && d[c.id] <= max);
-    let min = Math.max(MIN_DIST_FLOOR, Math.min(settings.minDist || MIN_DIST_FLOOR, max));
+    const wanted = Math.max(MIN_DIST_FLOOR, Math.min(settings.minDist || MIN_DIST_FLOOR, MIN_DIST_CEIL, max));
+    let min = wanted;
     let opts = free.filter(c => d[c.id] >= min);
-    while (!opts.length && min > MIN_DIST_FLOOR) { min--; opts = free.filter(c => d[c.id] >= min); }
-    return { min, max, opts: opts.map(c => c.id), dist: d };
+    while (opts.length < MIN_TARGET_CHOICES && min > MIN_DIST_FLOOR) { min--; opts = free.filter(c => d[c.id] >= min); }
+    return { min, max, wanted, opts: opts.map(c => c.id), dist: d };
   }
 
   // Scelta delle mete (stesse regole della schermata di Jack)
@@ -517,5 +522,5 @@
     return { best, balanced: !!best && best.err <= opts.tolerance, results };
   }
 
-  return { simulate, evaluate, structure, computeBelief, generateBalanced, chooseTargets, targetOptions, DEFAULT_SETTINGS, TARGET_POLICIES, mulberry32 };
+  return { simulate, evaluate, structure, computeBelief, generateBalanced, chooseTargets, targetOptions, DEFAULT_SETTINGS, TARGET_POLICIES, MIN_DIST_FLOOR, MIN_DIST_CEIL, MIN_TARGET_CHOICES, mulberry32 };
 });

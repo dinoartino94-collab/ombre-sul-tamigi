@@ -34,7 +34,7 @@ const CERTIFIED_MAPS = [
    ],
    "riverMode": "random"
   },
-  "jackRate": 0.482,
+  "jackRate": 0.483,
   "nearRate": 0.526,
   "ci95": 0.022,
   "games": 2000,
@@ -64,8 +64,8 @@ const CERTIFIED_MAPS = [
    ],
    "riverMode": "random"
   },
-  "jackRate": 0.485,
-  "nearRate": 0.466,
+  "jackRate": 0.488,
+  "nearRate": 0.465,
   "ci95": 0.022,
   "games": 2000,
   "locations": 189
@@ -136,8 +136,8 @@ const CERTIFIED_MAPS = [
    ],
    "riverMode": "random"
   },
-  "jackRate": 0.477,
-  "nearRate": 0.486,
+  "jackRate": 0.478,
+  "nearRate": 0.484,
   "ci95": 0.022,
   "games": 2000,
   "locations": 190
@@ -166,7 +166,7 @@ const CERTIFIED_MAPS = [
    ],
    "riverMode": "random"
   },
-  "jackRate": 0.472,
+  "jackRate": 0.475,
   "nearRate": 0.492,
   "ci95": 0.022,
   "games": 2000,
@@ -200,8 +200,8 @@ const CERTIFIED_MAPS = [
    ],
    "riverMode": "random"
   },
-  "jackRate": 0.519,
-  "nearRate": 0.541,
+  "jackRate": 0.52,
+  "nearRate": 0.544,
   "ci95": 0.022,
   "games": 2000,
   "locations": 188
@@ -225,8 +225,8 @@ const CERTIFIED_MAPS = [
    "water": [],
    "riverMode": "none"
   },
-  "jackRate": 0.501,
-  "nearRate": 0.507,
+  "jackRate": 0.502,
+  "nearRate": 0.506,
   "ci95": 0.022,
   "games": 2000,
   "locations": 187
@@ -251,7 +251,7 @@ const CERTIFIED_MAPS = [
    "riverMode": "none"
   },
   "jackRate": 0.501,
-  "nearRate": 0.538,
+  "nearRate": 0.537,
   "ci95": 0.022,
   "games": 2000,
   "locations": 182
@@ -275,8 +275,8 @@ const CERTIFIED_MAPS = [
    "water": [],
    "riverMode": "none"
   },
-  "jackRate": 0.517,
-  "nearRate": 0.497,
+  "jackRate": 0.518,
+  "nearRate": 0.496,
   "ci95": 0.022,
   "games": 2000,
   "locations": 188
@@ -300,7 +300,7 @@ const CERTIFIED_MAPS = [
    "water": [],
    "riverMode": "none"
   },
-  "jackRate": 0.5,
+  "jackRate": 0.499,
   "nearRate": 0.516,
   "ci95": 0.022,
   "games": 2000,
@@ -350,8 +350,8 @@ const CERTIFIED_MAPS = [
    "water": [],
    "riverMode": "none"
   },
-  "jackRate": 0.495,
-  "nearRate": 0.53,
+  "jackRate": 0.494,
+  "nearRate": 0.528,
   "ci95": 0.022,
   "games": 2000,
   "locations": 190
@@ -379,7 +379,7 @@ const CERTIFIED_MAPS = [
     0.1
    ]
   },
-  "jackRate": 0.482,
+  "jackRate": 0.483,
   "nearRate": 0.526,
   "ci95": 0.022,
   "games": 2000,
@@ -408,8 +408,8 @@ const CERTIFIED_MAPS = [
     0.1
    ]
   },
-  "jackRate": 0.476,
-  "nearRate": 0.519,
+  "jackRate": 0.478,
+  "nearRate": 0.52,
   "ci95": 0.022,
   "games": 2000,
   "locations": 192
@@ -436,8 +436,8 @@ const CERTIFIED_MAPS = [
     0.1
    ]
   },
-  "jackRate": 0.501,
-  "nearRate": 0.501,
+  "jackRate": 0.503,
+  "nearRate": 0.505,
   "ci95": 0.022,
   "games": 2000,
   "locations": 187
@@ -494,7 +494,7 @@ const CERTIFIED_MAPS = [
    ]
   },
   "jackRate": 0.502,
-  "nearRate": 0.486,
+  "nearRate": 0.487,
   "ci95": 0.022,
   "games": 2000,
   "locations": 190
@@ -522,7 +522,7 @@ const CERTIFIED_MAPS = [
     0.1
    ]
   },
-  "jackRate": 0.492,
+  "jackRate": 0.493,
   "nearRate": 0.516,
   "ci95": 0.022,
   "games": 2000,
