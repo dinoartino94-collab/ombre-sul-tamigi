@@ -1071,7 +1071,8 @@
       <div class="menu-btns">
         ${saved && saved.phase !== 'gameOver' ? '<button class="primary" data-act="continue">▶ Continua partita</button>' : ''}
         <button class="${saved && saved.phase !== 'gameOver' ? '' : 'primary'}" data-act="setup">✦ Nuova partita</button>
-        <button data-act="rules">📖 Regole</button>
+        <button data-act="guide">🌍 Guida rapida · Guide rapide · Quick start</button>
+        <button data-act="rules">📖 Regole complete</button>
       </div>
       <p style="text-align:center;color:var(--ink2);font-size:14px;margin-top:28px">Gioco a movimento nascosto per 2+ giocatori su un solo dispositivo: uno è Jack, gli altri la Polizia.<br>Passatevi il telefono o il tablet quando richiesto.</p>
     </div>`;
@@ -1151,6 +1152,31 @@
         <p>Trascina per spostare la mappa, pizzica con due dita o usa la rotella per lo zoom. ⤢ mostra tutta la mappa, ◎ centra sull'azione.</p>
       </div>
       <div class="btn-row"><button class="primary" data-act="${S ? 'rules-back' : 'to-menu'}">← Indietro</button></div>
+    </div>`;
+  }
+
+  // Guida rapida in Italiano / Français / English
+  function guideLang() {
+    if (prefs.lang && QUICKSTART[prefs.lang]) return prefs.lang;
+    const n = (navigator.language || 'it').slice(0, 2).toLowerCase();
+    return QUICKSTART[n] ? n : 'it';
+  }
+  function renderGuide(lang) {
+    closeModal();
+    lang = lang || guideLang();
+    const G = QUICKSTART[lang];
+    const sc = ensureScreen();
+    sc.className = 'screen';
+    sc.scrollTop = 0;
+    const back = { it: '← Indietro', fr: '← Retour', en: '← Back' }[lang];
+    sc.innerHTML = `<div class="inner rules" lang="${lang}">
+      <div class="tabs lang-tabs">${Object.keys(QUICKSTART).map(k => `<button class="${k === lang ? 'on' : ''}" data-act="guide-lang" data-l="${k}">${QUICKSTART[k].flag} ${QUICKSTART[k].lang}</button>`).join('')}</div>
+      <h1 style="color:var(--gold);text-align:center;font-variant:small-caps">${G.title}</h1>
+      <div class="box">
+        <p style="font-size:17px">${G.intro}</p>
+        ${G.sections.map(([h, b]) => `<h3>${h}</h3><div>${b}</div>`).join('')}
+      </div>
+      <div class="btn-row"><button class="primary" data-act="${S ? 'rules-back' : 'to-menu'}">${back}</button></div>
     </div>`;
   }
 
@@ -1276,6 +1302,8 @@
     switch (a) {
       case 'setup': return renderSettings();
       case 'rules': return renderRules();
+      case 'guide': return renderGuide();
+      case 'guide-lang': prefs.lang = el.dataset.l; savePrefs(); return renderGuide(el.dataset.l);
       case 'rules-back': closeModal(); return render();
       case 'to-menu': closeModal(); S = null; S = null; renderMenu(); return;
       case 'continue': S = loadSave(); U = {}; if (!S) return renderMenu(); useMap(S.map ? S.map.params : null); coverIfPrivate(); return render();
@@ -1301,6 +1329,7 @@
           <p style="font-size:14px;color:var(--ink2)">Mappa: ${esc(S.map && S.map.name ? S.map.name : 'Piccola (64 luoghi)')} · ${M.C.length} luoghi${S.map && S.map.jackRate != null ? ` · nelle simulazioni Jack vince il ${Math.round(S.map.jackRate * 100)}%${S.map.ci95 ? ` ±${Math.round(S.map.ci95 * 100)}` : ''} (${S.map.games} partite di conferma)${S.map.balanced === false ? ' · non è stata trovata una mappa entro la tolleranza: è la più vicina' : ''}` : ''}</p>
           <div class="menu-btns" style="max-width:none">
             <button data-act="close-modal" class="primary">Riprendi</button>
+            <button data-act="guide">🌍 Guida rapida · Guide · Quick start</button>
             <button data-act="rules">📖 Regole</button>
             <button data-act="to-menu-save">Torna al menu principale</button>
             <button data-act="quit" class="danger">Abbandona partita</button>
